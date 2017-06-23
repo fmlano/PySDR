@@ -29,13 +29,7 @@ waterfall_samples = 100      # number of rows of the waterfall
 samples_per_batch = 256*1024 # num of samples that we process at a time
 samples_in_time_plots = 500  # should be less than samples_per_batch
 
-
-# RTL-SDR stuff (including how to install the driver and wrapper)
-#    git clone https://github.com/osmocom/rtl-sdr.git
-#    mkdir build, cd build
-#    cmake ../ -DINSTALL_UDEV_RULES=ON -DDETACH_KERNEL_DRIVER=ON
-#    make, sudo make install, sudo ldconfig
-#    sudo pip install pyrtlsdr
+# RTL-SDR stuff
 sdr = RtlSdr()
 sdr.sample_rate = 2.048e6  # Hz
 sdr.center_freq = 101.1e6  # Hz
