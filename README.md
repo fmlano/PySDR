@@ -6,7 +6,7 @@ Currently this project takes the form of an example app for the RTL-SDR, but eve
 
 [VOLK](http://libvolk.org) with python wrappers can be used as a faster alternative to numpy
 
-All apps created with this framework are automatically web-based thanks to [Bokeh](http://bokeh.pydata.org/en/latest/) and [Flask](http://flask.pocoo.org/)
+All apps created with this framework are automatically web-based thanks to [Bokeh](http://bokeh.pydata.org/en/latest/) and [Flask](http://flask.pocoo.org/).  Designing your GUI is the same process as designing a web page, allowing for great flexibility. 
 
 ### Get started with:
 
