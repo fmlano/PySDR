@@ -49,13 +49,14 @@ manager = Manager()
 shared_buffer = manager.dict() # there is also an option to use a list
 shared_buffer['waterfall'] = np.ones((waterfall_samples, fft_size))*-100.0 # waterfall buffer
 shared_buffer['psd'] = np.zeros(fft_size) # PSD buffer
-shared_buffer['i'] = np.zeros(samples_in_time_plots)   # I buffer (time domain)
-shared_buffer['q'] = np.zeros(samples_in_time_plots)   # Q buffer (time domain)
-shared_buffer['stop-signal'] = False      # used to signal RTL to stop (when it goes true)
+shared_buffer['i'] = np.zeros(samples_in_time_plots) # I buffer (time domain)
+shared_buffer['q'] = np.zeros(samples_in_time_plots) # Q buffer (time domain)
+shared_buffer['stop-signal'] = False # used to signal RTL to stop (when it goes true)
+shared_buffer['utilization'] = 0.0 # float between 0 and 1, used to store how the process_samples is keeping up
 
 # Function that processes each batch of samples that comes in (currently, all DSP goes here)
 def process_samples(samples, rtlsdr_obj):
-    #startTime = time.time()
+    startTime = time.time()
     PSD = 10.0 * np.log10(np.abs(np.fft.fftshift(np.fft.fft(samples, fft_size)/float(fft_size)))**2) # calcs PSD
     waterfall = shared_buffer['waterfall'] # pull waterfall from buffer
     waterfall[:] = np.roll(waterfall, -1, axis=0) # shifts waterfall 1 row
@@ -67,7 +68,7 @@ def process_samples(samples, rtlsdr_obj):
     # if the change-gain or change-freq callback function signaled STOP then we need to cancel the async read
     if shared_buffer['stop-signal'] == True:
         sdr.cancel_read_async() # needs to be called from this function, so we use the shared memory to send a signal
-    #print 'Processing samples at ', samples_per_batch/(time.time() - startTime)/1e6, ' MHz' # this number should be greater than the rtl sample rate
+    shared_buffer['utilization'] = (time.time() - startTime)/float(samples_per_batch)*sdr.sample_rate # should be below 1.0 to avoid overflows
 
 # Function that runs asynchronous reading from the RTL, and is a blocking function
 def start_sdr():
@@ -116,6 +117,10 @@ def main_doc(doc):
                              fill_alpha=0.5, 
                              size=4) # size of circles
 
+    # Utilization bar (standard plot defined in gui.py)
+    utilization_plot = pysdr.utilization_bar()
+    utilization_data = utilization_plot.quad(top=[shared_buffer['utilization']], bottom=[0], left=[0], right=[1], color="#B3DE69") #adds 1 rectangle
+
     def gain_callback(attr, old, new):
         shared_buffer['stop-signal'] = True # triggers a stop of the asynchronous read (cant change gain during it)
         time.sleep(0.5) # give time for the stop signal to trigger it- if you get a segfault then this needs to be increased
@@ -139,10 +144,11 @@ def main_doc(doc):
     freq_input.on_change('value', freq_callback)
     
     # add the widgets to the document
-    doc.add_root(widgetbox(gain_select, freq_input)) # widgetbox() makes them a bit tighter grouped than column()
+    doc.add_root(row([widgetbox(gain_select, freq_input), utilization_plot])) # widgetbox() makes them a bit tighter grouped than column()
 
     # Add four plots to document, using the gridplot method of arranging them
     doc.add_root(gridplot([[fft_plot, time_plot], [waterfall_plot, iq_plot]], sizing_mode="scale_width", merge_tools=False)) # Spacer(width=20, sizing_mode="fixed")
+   
     
     # This function gets called periodically, and is how the "real-time streaming mode" works   
     def plot_update():  
@@ -152,6 +158,7 @@ def main_doc(doc):
         iq_data.data_source.data['y'] = shared_buffer['q'] # send most recent Q to IQ
         fft_line.data_source.data['y'] = shared_buffer['psd'] # send most recent psd to freq sink
         waterfall_data.data_source.data['image'] = [shared_buffer['waterfall']] # send waterfall 2d array to waterfall sink
+        utilization_data.data_source.data['top'] = [shared_buffer['utilization']] # send most recent utilization level (only need to adjust top of rectangle)
 
     # Add a periodic callback to be run every x milliseconds
     doc.add_periodic_callback(plot_update, 150) 
