@@ -1,6 +1,6 @@
 A python-based software-defined radio (SDR) framework designed for extremely rapid development of computationally intensive SDR apps, with an emphasis on utilization of mature 3rd party packages/libraries
 
-Currently this project takes the form of an example app for the RTL-SDR, but eventually it will be a "put your DSP code here" and "configure your SDR here" type of thing. 
+Currently this project takes the form of an example app for the RTL-SDR, but eventually it will be a "put your DSP code here" and "configure your SDR here" type of thing, similar to GNU Radio, except everything is in Python and it's not block-based.
 
 [Bokeh](http://bokeh.pydata.org/en/latest/) is used for the GUI, although you are free to use anything you want (e.g. [matplotlib](https://matplotlib.org/))
 
