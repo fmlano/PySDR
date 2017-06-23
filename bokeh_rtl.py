@@ -3,7 +3,6 @@
 import pysdr # our python package
 
 import numpy as np
-import yaml
 import time 
 
 from flask import Flask, render_template
@@ -18,7 +17,6 @@ from bokeh.embed import autoload_server
 from bokeh.layouts import column, row, gridplot, Spacer, widgetbox
 from bokeh.models import Select, TextInput
 from bokeh.server.server import Server
-from bokeh.themes import Theme
 from bokeh.util.browser import view # utility to Open a browser to view the specified location.
 
 from rtlsdr import RtlSdr
@@ -163,26 +161,8 @@ def main_doc(doc):
     # Add a periodic callback to be run every x milliseconds
     doc.add_periodic_callback(plot_update, 150) 
     
-    # nice way of providing a theme for all the figures in the document (could go in a sep file eventually)
-    doc.theme = Theme(json=yaml.load("""
-        attrs:
-            Figure:
-                background_fill_color: "#333333"
-                outline_line_color: white
-                toolbar_location: right
-                border_fill_color: black
-            Axis:
-                axis_label_text_color: "white"
-                major_label_text_color: "white"
-                axis_label_text_font_style: bold
-                major_tick_line_color: "white"
-                minor_tick_line_color: "white"
-            Title:
-                text_color: "white"
-                text_font_style: bold
-            Grid:
-                grid_line_dash: [2, 2]
-                grid_line_color: gray """))
+    # pull out a theme from themes.py
+    doc.theme = pysdr.black_and_white
                  
 
 flask_app = Flask('__main__') # use '__main__' because this script is the top level
