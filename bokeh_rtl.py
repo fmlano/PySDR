@@ -164,7 +164,7 @@ flask_app = Flask('__main__') # use '__main__' because this script is the top le
 # GET routine (provides the html template)
 @flask_app.route('/', methods=['GET'])  # going to http://localhost:5006 or whatever will trigger this route
 def bkapp_page():
-    script = autoload_server(url='http://localhost:5006/bkapp')
+    script = autoload_server(url='http://localhost:5006/bkapp') # switch to server_document when pip uses new version of bokeh, autoload_server is being depreciated
     return render_template('index.html', script=script)
     
 if __name__ == '__main__':

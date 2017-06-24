@@ -22,10 +22,15 @@ def base_plot(x_label, y_label, title, **kwargs):
     # Similar to above, except disable all zooming, perfect for waterfall plots
     if 'disable_all_zooming' in kwargs and kwargs['disable_all_zooming']: # if it's specified and is set True
         tools = [] # removes the WheelZoomTool we just added above
-            
+    
+    if 'plot_height' in kwargs:
+        plot_height = kwargs['plot_height']
+    else:
+        plot_height = 200
+    
     # Create the Bokeh figure
     plot = figure(plot_width = 300, # this is more for the ratio, because we have auto-width scaling
-                  plot_height = 200,
+                  plot_height = plot_height,
                   y_axis_label = y_label,
                   x_axis_label = x_label,
                   tools = tools + [BoxZoomTool(), ResetTool(), SaveTool()], # all the other tools we want- reference http://bokeh.pydata.org/en/0.10.0/docs/reference/models/tools.html
