@@ -4,8 +4,9 @@ import pysdr # our python package
 
 import numpy as np
 import time 
+from scipy.signal import firwin # FIR filter design using the window method
 
-from flask import Flask, render_template
+from flask import Flask, render_template 
 
 from tornado.ioloop import IOLoop
 from tornado.httpserver import HTTPServer
@@ -46,9 +47,14 @@ shared_buffer['q'] = np.zeros(samples_in_time_plots) # Q buffer (time domain)
 shared_buffer['stop-signal'] = False # used to signal RTL to stop (when it goes true)
 shared_buffer['utilization'] = 0.0 # float between 0 and 1, used to store how the process_samples is keeping up
 
+# create a streaming-type FIR filter (this should act the same as a FIR filter block in GNU Radio)
+taps = firwin(numtaps=100, cutoff=500e3, nyq=sdr.sample_rate)
+prefilter = pysdr.fir_filter(taps)
+
 # Function that processes each batch of samples that comes in (currently, all DSP goes here)
 def process_samples(samples, rtlsdr_obj):
     startTime = time.time()
+    samples = prefilter.filter(samples)
     PSD = 10.0 * np.log10(np.abs(np.fft.fftshift(np.fft.fft(samples, fft_size)/float(fft_size)))**2) # calcs PSD
     waterfall = shared_buffer['waterfall'] # pull waterfall from buffer
     waterfall[:] = np.roll(waterfall, -1, axis=0) # shifts waterfall 1 row
@@ -110,7 +116,7 @@ def main_doc(doc):
                              size=4) # size of circles
 
     # Utilization bar (standard plot defined in gui.py)
-    utilization_plot = pysdr.utilization_bar(0.1) # sets the top at 10% instead of 100% so we can see it move
+    utilization_plot = pysdr.utilization_bar(1.0) # sets the top at 10% instead of 100% so we can see it move
     utilization_data = utilization_plot.quad(top=[shared_buffer['utilization']], bottom=[0], left=[0], right=[1], color="#B3DE69") #adds 1 rectangle
 
     def gain_callback(attr, old, new):
