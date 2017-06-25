@@ -57,14 +57,14 @@ def base_plot(x_label, y_label, title, **kwargs):
 
 # The idea behind this utilization bar is to have an "included by default" widget to show
 #    how well the process_samples is keeping up with the incoming samples, in a realtime manner
-def utilization_bar():
+def utilization_bar(max_y):
     plot = figure(plot_width = 150, # this is more for the ratio, because we have auto-width scaling
                   plot_height = 150,
                   tools = [], # no tools needed for this one
                   title = 'Utilization')
     plot.toolbar.logo = None  # hides logo
     plot.x_range = Range1d(0, 1) 
-    plot.y_range = Range1d(0, 0.1)  # using 0.1 instead of 1 just so we can see it move
+    plot.y_range = Range1d(0, max_y)  # sometimes you want it to be way less than 1, to see it move
     plot.xaxis.visible = False # hide x axis
     return plot
 

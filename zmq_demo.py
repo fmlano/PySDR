@@ -19,22 +19,21 @@ from bokeh.models import Select, TextInput
 from bokeh.server.server import Server
 from bokeh.util.browser import view # utility to Open a browser to view the specified location.
 
-from rtlsdr import RtlSdr
-
 from multiprocessing import Process, Manager 
 
-# Parameters
-fft_size = 512               # output size of fft, the input size is the samples_per_batch
-waterfall_samples = 100      # number of rows of the waterfall
-samples_per_batch = 256*1024 # num of samples that we process at a time
-samples_in_time_plots = 500  # should be less than samples_per_batch
+import zmq
 
-# RTL-SDR stuff
-sdr = RtlSdr()
-sdr.sample_rate = 2.048e6  # Hz
-sdr.center_freq = 101.1e6  # Hz
-sdr.freq_correction = 60   # PPM
-sdr.gain = sdr.get_gains()[-1]/10.0 # highest gain to start with
+# Right now the way this demo works is you run a gnuradio flowgraph with a USRP (or any SDR)
+#   connected directly to a ZMQ-PUB sink, and run it.  No actual USRP commands are send by this app yet.
+#   the point of this demo is to show how we can use a ZMQ PUB/SUB model to get samples into a pysdr app
+
+# Parameters
+port = "4000"
+center_freq = 101.1e6
+sample_rate = 1e6
+fft_size = 512               # output size of fft, the input size is the samples per batch which is usually around 2000 for gnuradio
+waterfall_samples = 100      # number of rows of the waterfall
+samples_in_time_plots = 500  # should be less than samples per batch which is around 2000 for gnuradio but not gauranteed
 
 # Set up the shared buffer between threads (using multiprocessing's Manager).  it is global
 manager = Manager()
@@ -43,46 +42,44 @@ shared_buffer['waterfall'] = np.ones((waterfall_samples, fft_size))*-100.0 # wat
 shared_buffer['psd'] = np.zeros(fft_size) # PSD buffer
 shared_buffer['i'] = np.zeros(samples_in_time_plots) # I buffer (time domain)
 shared_buffer['q'] = np.zeros(samples_in_time_plots) # Q buffer (time domain)
-shared_buffer['stop-signal'] = False # used to signal RTL to stop (when it goes true)
 shared_buffer['utilization'] = 0.0 # float between 0 and 1, used to store how the process_samples is keeping up
 
 # Function that processes each batch of samples that comes in (currently, all DSP goes here)
-def process_samples(samples, rtlsdr_obj):
-    startTime = time.time()
-    PSD = 10.0 * np.log10(np.abs(np.fft.fftshift(np.fft.fft(samples, fft_size)/float(fft_size)))**2) # calcs PSD
-    waterfall = shared_buffer['waterfall'] # pull waterfall from buffer
-    waterfall[:] = np.roll(waterfall, -1, axis=0) # shifts waterfall 1 row
-    waterfall[-1,:] = PSD # fill last row with new fft results
-    shared_buffer['waterfall'] = waterfall # you have to copy it back into the manager_list
-    shared_buffer['psd'] = PSD # overwrites whatever was in psd buffer, so that the GUI uses the most recent one when it goes to refresh itself
-    shared_buffer['i'] = np.real(samples[0:samples_in_time_plots]) # i buffer
-    shared_buffer['q'] = np.imag(samples[0:samples_in_time_plots]) # q buffer
-    # if the change-gain or change-freq callback function signaled STOP then we need to cancel the async read
-    if shared_buffer['stop-signal'] == True:
-        sdr.cancel_read_async() # needs to be called from this function, so we use the shared memory to send a signal
-    shared_buffer['utilization'] = (time.time() - startTime)/float(samples_per_batch)*sdr.sample_rate # should be below 1.0 to avoid overflows
+def process_samples():
+    # Set up connection to gnuradio or whatever is providing zmq stream of np.complex64 in array form
+    context = zmq.Context()
+    socket = context.socket(zmq.SUB)
+    print "Connecting to server"
+    socket.connect ("tcp://localhost:%s" % port)
+    topicfilter = "" # no idea why, but if i dont provide an empty topic filter then it just does not work, even the simple pyzmq example doesn't work
+    socket.setsockopt(zmq.SUBSCRIBE, topicfilter)
+    while True: # Run forever
+        samples = np.frombuffer(socket.recv(), dtype=np.complex64) # blocking until there's a msg sent by the server
+        startTime = time.time()
+        PSD = 10.0 * np.log10(np.abs(np.fft.fftshift(np.fft.fft(samples, fft_size)/float(fft_size)))**2) # calcs PSD
+        waterfall = shared_buffer['waterfall'] # pull waterfall from buffer
+        waterfall[:] = np.roll(waterfall, -1, axis=0) # shifts waterfall 1 row
+        waterfall[-1,:] = PSD # fill last row with new fft results
+        shared_buffer['waterfall'] = waterfall # you have to copy it back into the manager_list
+        shared_buffer['psd'] = PSD # overwrites whatever was in psd buffer, so that the GUI uses the most recent one when it goes to refresh itself
+        shared_buffer['i'] = np.real(samples[0:samples_in_time_plots]) # i buffer
+        shared_buffer['q'] = np.imag(samples[0:samples_in_time_plots]) # q buffer
+        shared_buffer['utilization'] = (time.time() - startTime)/float(len(samples))*sample_rate # should be below 1.0 to avoid overflows
 
-# Function that runs asynchronous reading from the RTL, and is a blocking function
-def start_sdr():
-    while True:
-        if shared_buffer['stop-signal'] == False:
-            sdr.read_samples_async(callback=process_samples, num_samples=samples_per_batch) # sets RTL to asynchronous mode using the specified callback
-        time.sleep(0.1) # we only wait here when stop-signal == True, which is usually very brief
-        
-# Start SDR sample processign as a separate thread
-p = Process(target=start_sdr) 
+# Start SDR sample recieving/processing as a separate thread
+p = Process(target=process_samples) 
 p.start()
 
 # This is the Bokeh "document"
 def main_doc(doc):
     # Frequncy Sink (line plot)
     fft_plot = pysdr.base_plot('Freq [MHz]', 'PSD [dB]', 'Frequency Sink', disable_horizontal_zooming=True) 
-    f = (np.linspace(-sdr.sample_rate/2.0, sdr.sample_rate/2.0, fft_size) + sdr.center_freq)/1e6
+    f = (np.linspace(-sample_rate/2.0, sample_rate/2.0, fft_size) + center_freq)/1e6
     fft_line = fft_plot.line(f, np.zeros(len(f)), color="aqua", line_width=1) # set x values but use dummy values for y
     
     # Time Sink (line plot)
     time_plot = pysdr.base_plot('Time [ms]', ' ', 'Time Sink', disable_horizontal_zooming=True) 
-    t = np.linspace(0.0, samples_in_time_plots / sdr.sample_rate, samples_in_time_plots) * 1e3 # in ms
+    t = np.linspace(0.0, samples_in_time_plots / sample_rate, samples_in_time_plots) * 1e3 # in ms
     timeI_line = time_plot.line(t, np.zeros(len(t)), color="aqua", line_width=1) # set x values but use dummy values for y
     timeQ_line = time_plot.line(t, np.zeros(len(t)), color="red", line_width=1) # set x values but use dummy values for y
 
@@ -100,8 +97,8 @@ def main_doc(doc):
 
     # IQ/Constellation Sink ("circle" plot)
     iq_plot = pysdr.base_plot(' ', ' ', 'IQ Plot')
-    iq_plot._set_x_range(-1.0, 1.0) # this is to keep it fixed at -1 to 1. you can also just zoom out with mouse wheel and it will stop auto-ranging
-    iq_plot._set_y_range(-1.0, 1.0)
+    #iq_plot._set_x_range(-1.0, 1.0) # this is to keep it fixed at -1 to 1. you can also just zoom out with mouse wheel and it will stop auto-ranging
+    #iq_plot._set_y_range(-1.0, 1.0)
     iq_data = iq_plot.circle(np.zeros(samples_in_time_plots), 
                              np.zeros(samples_in_time_plots),
                              line_alpha=0.0, # setting line_width=0 didn't make it go away, but this works
@@ -110,35 +107,12 @@ def main_doc(doc):
                              size=4) # size of circles
 
     # Utilization bar (standard plot defined in gui.py)
-    utilization_plot = pysdr.utilization_bar(0.1) # sets the top at 10% instead of 100% so we can see it move
+    utilization_plot = pysdr.utilization_bar(1.0) # sets top of bar to be 100%
     utilization_data = utilization_plot.quad(top=[shared_buffer['utilization']], bottom=[0], left=[0], right=[1], color="#B3DE69") #adds 1 rectangle
 
-    def gain_callback(attr, old, new):
-        shared_buffer['stop-signal'] = True # triggers a stop of the asynchronous read (cant change gain during it)
-        time.sleep(0.5) # give time for the stop signal to trigger it- if you get a segfault then this needs to be increased
-        sdr.gain = float(new) # set new gain
-        shared_buffer['stop-signal'] = False  # turns off "stop" signal
-
-    def freq_callback(attr, old, new):
-        shared_buffer['stop-signal'] = True # see above comments
-        time.sleep(0.5)
-        sdr.center_freq = float(new) # TextInput provides a string
-        f = np.linspace(-sdr.sample_rate/2.0, sdr.sample_rate/2.0, fft_size) + sdr.center_freq
-        fft_line.data_source.data['x'] = f/1e6 # update x axis of freq sink
-        shared_buffer['stop-signal'] = False
-        
-    # gain selector
-    gain_select = Select(title="Gain:", value=str(sdr.gain), options=[str(i/10.0) for i in sdr.get_gains()])
-    gain_select.on_change('value', gain_callback)
-    
-    # center_freq TextInput
-    freq_input = TextInput(value=str(sdr.center_freq), title="Center Freq [Hz]")
-    freq_input.on_change('value', freq_callback)
-    
-    # add the widgets to the document
-    doc.add_root(row([widgetbox(gain_select, freq_input), utilization_plot])) # widgetbox() makes them a bit tighter grouped than column()
 
     # Add four plots to document, using the gridplot method of arranging them
+    doc.add_root(utilization_plot)
     doc.add_root(gridplot([[fft_plot, time_plot], [waterfall_plot, iq_plot]], sizing_mode="scale_width", merge_tools=False)) # Spacer(width=20, sizing_mode="fixed")
    
     
@@ -182,8 +156,4 @@ if __name__ == '__main__':
     io_loop.add_callback(view, "http://localhost:8080/") # calls the given callback (Opens browser to specified location) on the next I/O loop iteration. provides thread-safety
     io_loop.start() # starts ioloop, and is blocking
 
-
-
-
-    
-    
+      
