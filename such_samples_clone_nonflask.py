@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# to run this app use: bokeh serve such_samples_clone_nonweb.py --show
+# to run this app use: bokeh serve such_samples_clone_nonflask.py --show
 
 import pysdr # our python package
 
