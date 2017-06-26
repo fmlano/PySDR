@@ -11,6 +11,7 @@ class fir_filter:
     def __init__(self, taps):
         self.taps = taps
         self.previous_batch = np.zeros(len(self.taps) - 1) # holds end of previous batch, this is the "state" essentially
+
     def filter(self, x):
         out = np.convolve(np.concatenate((self.previous_batch, x)), self.taps, mode='valid')
         self.previous_batch[:] = x[-(len(self.taps) - 1):] # the last portion of the batch gets saved for the next iteration #FIXME if batches become smaller than taps this won't work
@@ -47,7 +48,9 @@ if __name__ == '__main__': # (call this script directly to run tests)
     test_filter2 = fft_filter(taps)
     for i in range(len(x)/batch_size):
         x_input = x[i*batch_size:(i+1)*batch_size] # this line represents the incoming stream
+        start = time.time()
         filter_output = test_filter.filter(x_input) # run the filter
+        print 'It took', time.time()-start, 'seconds.'
         y2 = np.concatenate((y2, filter_output)) # add output to our log
         filter_output = test_filter2.filter(x_input) # run the filter
         y3 = np.concatenate((y3, filter_output))
