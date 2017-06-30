@@ -20,8 +20,6 @@ from bokeh.models import Select, TextInput
 from bokeh.server.server import Server
 from bokeh.util.browser import view # utility to Open a browser to view the specified location.
 
-from uhd import libpyuhd
-
 from multiprocessing import Process, Manager 
 
 # Parameters
@@ -33,7 +31,6 @@ samples_in_time_plots = 500  # should be less than samples_per_batch
 center_freq = 101.1e6
 samp_rate = 1e6
 gain = 50
-
 
 # Set up the shared buffer between threads (using multiprocessing's Manager).  it is global
 manager = Manager()
@@ -50,9 +47,7 @@ shared_buffer['usrp-signal'] = (False, '')
 taps = firwin(numtaps=100, cutoff=200e3, nyq=samp_rate)
 prefilter = pysdr.fir_filter(taps)
 
-
-
-    
+   
 # Function that processes each batch of samples that comes in (currently, all DSP goes here)
 def process_samples(samples):
     startTime = time.time()
@@ -66,36 +61,21 @@ def process_samples(samples):
     shared_buffer['i'] = np.real(samples[0:samples_in_time_plots]) # i buffer
     shared_buffer['q'] = np.imag(samples[0:samples_in_time_plots]) # q buffer
     shared_buffer['utilization'] = (time.time() - startTime)/float(samples_per_batch)*samp_rate # should be below 1.0 to avoid overflows
-
+    
 # Function that runs asynchronous reading from the RTL, and is a blocking function
 def start_sdr():
     # Initialize USRP
-    usrp = libpyuhd.usrp.multi_usrp('') 
-    usrp.set_rx_rate(samp_rate, 0) # 2nd arg is channel
-    usrp.set_rx_freq(libpyuhd.types.tune_request(center_freq), 0) # apparently you have to do the tune request function
-    usrp.set_rx_gain(gain, 0)
-    st_args = libpyuhd.usrp.stream_args("fc32", "sc16")
-    st_args.channels = [0] # channel
-    metadata = libpyuhd.types.rx_metadata()
-    streamer = usrp.get_rx_stream(st_args)
-    buffer_samps = streamer.get_max_num_samps()
-    print "max_num_samps: ", buffer_samps
-    recv_buffer = np.zeros(buffer_samps, dtype=np.complex64)
-    recv_samps = 0 # keeps track of where we are in buffer
-    stream_cmd = libpyuhd.types.stream_cmd(libpyuhd.types.stream_mode.start_cont)
-    stream_cmd.stream_now = True
-    streamer.issue_stream_cmd(stream_cmd)
+    usrp = pysdr.USRP('') # this is where you would choose which addr or usrp type
+    usrp.set_samp_rate(samp_rate) 
+    usrp.set_center_freq(center_freq)
+    usrp.set_gain(gain)
+    usrp.prepare_to_rx()
     while True:
         if shared_buffer['usrp-signal'][0] == True: 
             eval('usrp.' + shared_buffer['usrp-signal'][1])
             shared_buffer['usrp-signal'] = (False, '')
-        samps = streamer.recv(recv_buffer, metadata) # receive samples!
-        if metadata.error_code != libpyuhd.types.rx_metadata_error_code.none:
-            print(metadata.strerror())
-        if samps:
-            samples = recv_buffer[0:samps]
-            process_samples(samples)
-            #print samps
+        samples = usrp.recv() # receive samples!  FIXME i assume this function is blocking, but i should definitely verify
+        process_samples(samples)
         
 # Start SDR sample processign as a separate thread
 p = Process(target=start_sdr) 
@@ -145,7 +125,7 @@ def main_doc(doc):
     def gain_callback(attr, old, new):
         gain = new # set new gain (leave it as a string)
         print "Setting gain to ", gain
-        command = 'set_rx_gain(' + gain + ', 0)'
+        command = 'set_gain(' + gain + ')'
         shared_buffer['usrp-signal'] = (True, command)
 
     def freq_callback(attr, old, new):
@@ -153,7 +133,7 @@ def main_doc(doc):
         f = np.linspace(-samp_rate/2.0, samp_rate/2.0, fft_size) + center_freq
         fft_line.data_source.data['x'] = f/1e6 # update x axis of freq sink
         print "Setting freq to ", center_freq
-        command = 'set_rx_freq(libpyuhd.types.tune_request(' + str(center_freq) + '), 0)'
+        command = 'set_center_freq(' + str(center_freq) + ')'
         shared_buffer['usrp-signal'] = (True, command)        
 
         
