@@ -39,7 +39,6 @@ shared_buffer['waterfall'] = np.ones((waterfall_samples, fft_size))*-100.0 # wat
 shared_buffer['psd'] = np.zeros(fft_size) # PSD buffer
 shared_buffer['i'] = np.zeros(samples_in_time_plots) # I buffer (time domain)
 shared_buffer['q'] = np.zeros(samples_in_time_plots) # Q buffer (time domain)
-shared_buffer['stop-signal'] = False # used to signal RTL to stop (when it goes true)
 shared_buffer['utilization'] = 0.0 # float between 0 and 1, used to store how the process_samples is keeping up
 shared_buffer['usrp-signal'] = (False, '')
 
@@ -65,7 +64,7 @@ def process_samples(samples):
 # Function that runs asynchronous reading from the RTL, and is a blocking function
 def start_sdr():
     # Initialize USRP
-    usrp = pysdr.USRP('') # this is where you would choose which addr or usrp type
+    usrp = pysdr.usrp_source('') # this is where you would choose which addr or usrp type
     usrp.set_samp_rate(samp_rate) 
     usrp.set_center_freq(center_freq)
     usrp.set_gain(gain)

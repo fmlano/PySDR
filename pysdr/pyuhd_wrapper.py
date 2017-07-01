@@ -11,9 +11,9 @@ import numpy as np
 # sudo make install
 
 # Even though pyuhd is a wrapper for UHD, our wrapper of a wrapper makes it a bit easier to use and i havent seen a performance loss
-class USRP(libpyuhd.usrp.multi_usrp):
+class usrp_source(libpyuhd.usrp.multi_usrp):
     def __init__(self, usrp_args=''):
-        super(USRP, self).__init__(usrp_args)
+        super(usrp_source, self).__init__(usrp_args)
     
     def set_samp_rate(self, samp_rate):
         self.set_rx_rate(samp_rate, 0)

@@ -4,4 +4,4 @@ from themes import black_and_white
 from filters import fir_filter
 from filters import fft_filter
 from decimate import decimate
-from pyuhd_wrapper import USRP
+from pyuhd_wrapper import usrp_source
