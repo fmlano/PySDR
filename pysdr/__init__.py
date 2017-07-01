@@ -5,3 +5,4 @@ from filters import fir_filter
 from filters import fft_filter
 from decimate import decimate
 from pyuhd_wrapper import usrp_source
+from pysdr_app import pysdr_app

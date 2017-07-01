@@ -1,36 +1,23 @@
 #!/usr/bin/env python
 
 import pysdr # our python package
-
 import numpy as np
 import time 
 from scipy.signal import firwin # FIR filter design using the window method
-
-from flask import Flask, render_template 
-
-from tornado.ioloop import IOLoop
-from tornado.httpserver import HTTPServer
-from tornado.wsgi import WSGIContainer
-
-from bokeh.application import Application
-from bokeh.application.handlers import FunctionHandler
-from bokeh.embed import autoload_server
 from bokeh.layouts import column, row, gridplot, Spacer, widgetbox
 from bokeh.models import Select, TextInput
-from bokeh.server.server import Server
-from bokeh.util.browser import view # utility to Open a browser to view the specified location.
-
 from multiprocessing import Process, Manager 
 
-# Parameters
-fft_size = 512               # output size of fft, the input size is the samples_per_batch
-waterfall_samples = 100      # number of rows of the waterfall
-samples_per_batch = 2044 #256*1024 # num of samples that we process at a time
-samples_in_time_plots = 500  # should be less than samples_per_batch
-
+# USRP Parameters
 center_freq = 101.1e6
 samp_rate = 1e6
 gain = 50
+
+# Other Parameters
+fft_size = 512               # output size of fft, the input size is the samples_per_batch
+waterfall_samples = 100      # number of rows of the waterfall
+samples_in_time_plots = 500  # should be less than samples per batch (2044 for B200)
+
 
 # Set up the shared buffer between threads (using multiprocessing's Manager).  it is global
 manager = Manager()
@@ -59,7 +46,7 @@ def process_samples(samples):
     shared_buffer['psd'] = PSD # overwrites whatever was in psd buffer, so that the GUI uses the most recent one when it goes to refresh itself
     shared_buffer['i'] = np.real(samples[0:samples_in_time_plots]) # i buffer
     shared_buffer['q'] = np.imag(samples[0:samples_in_time_plots]) # q buffer
-    shared_buffer['utilization'] = (time.time() - startTime)/float(samples_per_batch)*samp_rate # should be below 1.0 to avoid overflows
+    shared_buffer['utilization'] = (time.time() - startTime)/float(len(samples))*samp_rate # should be below 1.0 to avoid overflows
     
 # Function that runs asynchronous reading from the RTL, and is a blocking function
 def start_sdr():
@@ -120,7 +107,7 @@ def main_doc(doc):
     # Utilization bar (standard plot defined in gui.py)
     utilization_plot = pysdr.utilization_bar(1.0) # sets the top at 10% instead of 100% so we can see it move
     utilization_data = utilization_plot.quad(top=[shared_buffer['utilization']], bottom=[0], left=[0], right=[1], color="#B3DE69") #adds 1 rectangle
-
+    
     def gain_callback(attr, old, new):
         gain = new # set new gain (leave it as a string)
         print "Setting gain to ", gain
@@ -135,7 +122,6 @@ def main_doc(doc):
         command = 'set_center_freq(' + str(center_freq) + ')'
         shared_buffer['usrp-signal'] = (True, command)        
 
-        
     # gain selector
     gain_select = Select(title="Gain:", value=str(gain), options=[str(i*10) for i in range(8)])
     gain_select.on_change('value', gain_callback)
@@ -149,7 +135,6 @@ def main_doc(doc):
 
     # Add four plots to document, using the gridplot method of arranging them
     doc.add_root(gridplot([[fft_plot, time_plot], [waterfall_plot, iq_plot]], sizing_mode="scale_width", merge_tools=False)) # Spacer(width=20, sizing_mode="fixed")
-   
     
     # This function gets called periodically, and is how the "real-time streaming mode" works   
     def plot_update():  
@@ -167,33 +152,20 @@ def main_doc(doc):
     
     # pull out a theme from themes.py
     doc.theme = pysdr.black_and_white
-                 
-
-flask_app = Flask('__main__') # use '__main__' because this script is the top level
-
-# GET routine (provides the html template)
-@flask_app.route('/', methods=['GET'])  # going to http://localhost:5006 or whatever will trigger this route
-def bkapp_page():
-    script = autoload_server(url='http://localhost:5006/bkapp') # switch to server_document when pip uses new version of bokeh, autoload_server is being depreciated
-    return render_template('index.html', script=script)
-    
-if __name__ == '__main__':
-    # Create bokeh app and IOLoop
-    bokeh_app = Application(FunctionHandler(main_doc)) # Application is "a factory for Document instances" and FunctionHandler "runs a function which modifies a document"
-    io_loop = IOLoop.current() # creates an IOLoop for the current thread
-    # Create the Bokeh server, which "instantiates Application instances as clients connect".  We tell it the bokeh app and the ioloop to use
-    server = Server({'/bkapp': bokeh_app}, io_loop=io_loop, allow_websocket_origin=["localhost:8080"]) 
-    server.start() # Start the Bokeh Server and its background tasks. non-blocking and does not affect the state of the IOLoop
-    # Create the web server using tornado (separate from Bokeh server)
-    print('Opening Flask app with embedded Bokeh application on http://localhost:8080/')
-    http_server = HTTPServer(WSGIContainer(flask_app)) # A non-blocking, single-threaded HTTP server. serves the WSGI app that flask provides. WSGI was created as a low-level interface between web servers and web applications or frameworks to promote common ground for portable web application development
-    http_server.listen(8080) # this is the single-process version, there are multi-process ones as well
-    # Open browser to main page
-    io_loop.add_callback(view, "http://localhost:8080/") # calls the given callback (Opens browser to specified location) on the next I/O loop iteration. provides thread-safety
-    io_loop.start() # starts ioloop, and is blocking
-
-
-
-
     
     
+       
+
+myapp = pysdr.pysdr_app() # start new pysdr app
+myapp.set_bokeh_doc(main_doc) # provide Bokeh document defined above
+myapp.create_bokeh_server()
+myapp.create_web_server() 
+myapp.start_web_server() # blocking
+
+
+
+
+
+
+
+
