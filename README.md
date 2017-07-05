@@ -10,9 +10,9 @@ All apps created with this framework are automatically web-based thanks to [Boke
 
 ### Get started with:
 
-1. Connect an [RTL-SDR](http://www.rtl-sdr.com/about-rtl-sdr/)
+1. Connect an [RTL-SDR](http://www.rtl-sdr.com/about-rtl-sdr/) or USRP
 2. `[sudo] pip install -r requirements.txt`
-3. `python bokeh_rtl.py`
+3. `python bokeh_rtl.py` or `python usrp_demo.py`
 4. A web browser should pop up, showing the FM radio spectrum
 
 ### Install RTL-SDR Driver:

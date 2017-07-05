@@ -95,8 +95,8 @@ def main_doc(doc):
     
     # IQ/Constellation Sink ("circle" plot)
     iq_plot = pysdr.base_plot(' ', ' ', 'IQ Plot')
-    iq_plot._set_x_range(-1.0, 1.0) # this is to keep it fixed at -1 to 1. you can also just zoom out with mouse wheel and it will stop auto-ranging
-    iq_plot._set_y_range(-1.0, 1.0)
+    #iq_plot._set_x_range(-1.0, 1.0) # this is to keep it fixed at -1 to 1. you can also just zoom out with mouse wheel and it will stop auto-ranging
+    #iq_plot._set_y_range(-1.0, 1.0)
     # we will use the same data buffers as the time-domain plot
     iq_data = iq_plot.circle(np.zeros(samples_in_time_plots), 
                              np.zeros(samples_in_time_plots),
@@ -142,8 +142,7 @@ def main_doc(doc):
     def plot_update():  
         timeI_line.data_source.data['y'] = shared_buffer['i'] # send most recent I to time sink
         timeQ_line.data_source.data['y'] = shared_buffer['q'] # send most recent Q to time sink
-        iq_data.data_source.data['x'] = shared_buffer['i'] # send most recent I to IQ
-        iq_data.data_source.data['y'] = shared_buffer['q'] # send most recent Q to IQ
+        iq_data.data_source.data = {'x': shared_buffer['i'], 'y': shared_buffer['q']} # send I and Q in one step using dict
         fft_line.data_source.data['y'] = shared_buffer['psd'] # send most recent psd to freq sink
         waterfall_data.data_source.data['image'] = [shared_buffer['waterfall']] # send waterfall 2d array to waterfall sink
         utilization_data.data_source.data['top'] = [shared_buffer['utilization']] # send most recent utilization level (only need to adjust top of rectangle)
