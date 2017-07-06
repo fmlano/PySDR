@@ -13,6 +13,8 @@ from bokeh.util.browser import view # utility to Open a browser to view the spec
 
 from multiprocessing import Process, Manager 
 
+from themes import black_and_white
+
 # This is the equivalent of top block. in reality it's just doing the Bokeh and Flask stuff, not DSP
 class pysdr_app:
     def __init__(self):
@@ -24,8 +26,14 @@ class pysdr_app:
         def bkapp_page():
             script = autoload_server(url='http://localhost:5006/bkapp') # switch to server_document when pip uses new version of bokeh, autoload_server is being depreciated
             return render_template('index.html', script=script)
-        
-    def set_bokeh_doc(self, main_doc):
+    
+    def assemble_bokeh_doc(self, widgets, plots, plot_update, theme):
+        def main_doc(doc):
+            doc.add_root(widgets)  # add the widgets to the document
+            doc.add_root(plots)  # Add four plots to document, using the gridplot method of arranging them
+            doc.add_periodic_callback(plot_update, 150)  # Add a periodic callback to be run every x milliseconds
+            doc.theme = theme
+ 
         # Create bokeh app
         self.bokeh_app = Application(FunctionHandler(main_doc)) # Application is "a factory for Document instances" and FunctionHandler "runs a function which modifies a document"
         
