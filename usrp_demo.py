@@ -6,33 +6,27 @@ import time
 from scipy.signal import firwin # FIR filter design using the window method
 from bokeh.layouts import column, row, gridplot, Spacer, widgetbox
 from bokeh.models import Select, TextInput
-from multiprocessing import Process, Manager 
+from multiprocessing import Process, Manager, Queue
 
-# USRP Parameters
+##############
+# Parameters #
+##############
 center_freq = 101.1e6
 samp_rate = 1e6
 gain = 50
-
-# Other Parameters
 fft_size = 512               # output size of fft, the input size is the samples_per_batch
 waterfall_samples = 100      # number of rows of the waterfall
 samples_in_time_plots = 500  # should be less than samples per batch (2044 for B200)
 
-# Set up the shared buffer between DSP and GUI threads (using multiprocessing's Manager).  it must be global
-manager = Manager()
-shared_buffer = manager.dict() # there is also an option to use a list, but throwing everything in a dict seems nice
-
-
-###############
-#  SET UP GUI #
-############### 
+##############
+# SET UP GUI #
+##############
 
 # Frequncy Sink (line plot)
 fft_plot = pysdr.base_plot('Freq [MHz]', 'PSD [dB]', 'Frequency Sink', disable_horizontal_zooming=True) 
 f = (np.linspace(-samp_rate/2.0, samp_rate/2.0, fft_size) + center_freq)/1e6
 fft_plot._input_buffer['y'] = np.zeros(fft_size) # this buffer is how the DSP sends data to the plot in realtime
 fft_line = fft_plot.line(f, np.zeros(fft_size), color="aqua", line_width=1) # set x values but use dummy values for y
-
 
 # Time Sink (line plot)
 time_plot = pysdr.base_plot('Time [ms]', ' ', 'Time Sink', disable_horizontal_zooming=True) 
@@ -73,11 +67,14 @@ utilization_plot = pysdr.utilization_bar(1.0) # sets the top at 10% instead of 1
 utilization_plot._input_buffer['y'] = [0.0] # float between 0 and 1, used to store how the process_samples is keeping up
 utilization_data = utilization_plot.quad(top=utilization_plot._input_buffer['y'], bottom=[0], left=[0], right=[1], color="#B3DE69") #adds 1 rectangle
 
+# Queue used to send usrp commands from Bokeh thread to the USRP thread
+usrp_command_queue = Queue() 
+
 def gain_callback(attr, old, new):
     gain = new # set new gain (leave it as a string)
     print "Setting gain to ", gain
     command = 'set_gain(' + gain + ')'
-    shared_buffer['usrp-signal'] = (True, command)
+    usrp_command_queue.put(command)
 
 def freq_callback(attr, old, new):
     center_freq = float(new) # TextInput provides a string
@@ -85,7 +82,7 @@ def freq_callback(attr, old, new):
     fft_line.data_source.data['x'] = f/1e6 # update x axis of freq sink
     print "Setting freq to ", center_freq
     command = 'set_center_freq(' + str(center_freq) + ')'
-    shared_buffer['usrp-signal'] = (True, command)        
+    usrp_command_queue.put(command)
 
 # gain selector
 gain_select = Select(title="Gain:", value=str(gain), options=[str(i*10) for i in range(8)])
@@ -98,7 +95,6 @@ freq_input.on_change('value', freq_callback)
 widgets = row([widgetbox(gain_select, freq_input), utilization_plot]) # widgetbox() makes them a bit tighter grouped than column()
 plots = gridplot([[fft_plot, time_plot], [waterfall_plot, iq_plot]], sizing_mode="scale_width", merge_tools=False) # Spacer(width=20, sizing_mode="fixed")
 
-
 # This function gets called periodically, and is how the "real-time streaming mode" works   
 def plot_update():  
     timeI_line.data_source.data['y'] = time_plot._input_buffer['i'] # send most recent I to time sink
@@ -109,12 +105,18 @@ def plot_update():
     utilization_data.data_source.data['top'] = utilization_plot._input_buffer['y'] # send most recent utilization level (only need to adjust top of rectangle)
 
 
+###################
+# Init DSP Blocks #
+###################
 
-# THIS IS WHERE ALL THE "BLOCKS" GET CREATED
 # create a streaming-type FIR filter (this should act the same as a FIR filter block in GNU Radio)
 taps = firwin(numtaps=100, cutoff=200e3, nyq=samp_rate) # scipy's filter designer
 prefilter = pysdr.fir_filter(taps)
 accumulator = pysdr.accumulator(100000) # accumulates batches of samples so we can process more at a time. arg is min amount to store
+
+###############
+# DSP Routine #
+###############
 
 # Function that processes each batch of samples that comes in (currently, all DSP goes here)
 def process_samples(samples):
@@ -136,21 +138,21 @@ def process_samples(samples):
         iq_plot._input_buffer['q'] = np.imag(samples[0:samples_in_time_plots])
         utilization_plot._input_buffer['y'] = [(time.time() - startTime)/float(len(samples))*samp_rate] # should be below 1.0 to avoid overflows
         
+###############
+# USRP Config #
+###############
 
-# This is where we read in samples from the USRP
 def run_usrp():
-    # Initialize USRP
     usrp = pysdr.usrp_source('') # this is where you would choose which addr or usrp type
     usrp.set_samp_rate(samp_rate) 
     usrp.set_center_freq(center_freq)
     usrp.set_gain(gain)
     usrp.prepare_to_rx()
-    shared_buffer['usrp-signal'] = (False, '') # temporary way of signaling commands to the usrp, very hacky
-    while True:
-        if shared_buffer['usrp-signal'][0] == True:  # these 3 lines are how the GUI tells the USRP to change gain and freq, it needs rework
-            eval('usrp.' + shared_buffer['usrp-signal'][1])
-            shared_buffer['usrp-signal'] = (False, '')
-        samples = usrp.recv() # receive samples! pretty sure this function is blocking
+    while True: # endless loop of rx samples
+        if not usrp_command_queue.empty():  # check if there's a usrp command in the queue
+            command = usrp_command_queue.get()
+            eval('usrp.' + command) # messy way to do it!
+        samples = usrp.recv() # receive samples. pretty sure this function is blocking
         process_samples(samples) # send samples to DSP
         
 # We do run_usrp() and process_samples() in a 2nd thread, while the Bokeh GUI stuff is in the main thread
@@ -158,8 +160,9 @@ usrp_dsp_process = Process(target=run_usrp)
 usrp_dsp_process.start()
 
 
-
-# Assemble app
+################
+# Assemble App #
+################
 myapp = pysdr.pysdr_app() # start new pysdr app
 myapp.assemble_bokeh_doc(widgets, plots, plot_update, pysdr.black_and_white) # widgets, plots, periodic callback function, theme
 myapp.create_bokeh_server()
