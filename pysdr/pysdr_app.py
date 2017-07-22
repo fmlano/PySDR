@@ -1,3 +1,4 @@
+from __future__ import print_function # allows python3 print() to work in python2
 
 from flask import Flask, render_template 
 
@@ -13,12 +14,12 @@ from bokeh.util.browser import view # utility to Open a browser to view the spec
 
 from multiprocessing import Process, Manager 
 
-from themes import black_and_white
+from pysdr.themes import black_and_white # removed relative imports to work with python3
 
 # This is the equivalent of top block. in reality it's just doing the Bokeh and Flask stuff, not DSP
 class pysdr_app:
     def __init__(self):
-        print "creating new app"
+        print("creating new app")
         self.flask_app = Flask('__main__') # use '__main__' because this script is the top level
 
         # GET routine for root page

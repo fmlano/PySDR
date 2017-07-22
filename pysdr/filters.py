@@ -2,6 +2,8 @@
 #    but provide them in a "streaming" manner, where batches of samples go through them without the developer
 #    having to worry about discontinuities and such.  
 
+from __future__ import print_function
+
 import numpy as np
 import time
 from scipy import signal
@@ -60,8 +62,8 @@ if __name__ == '__main__': # (call this script directly to run tests)
     y2 = y2[len(taps)-1:]
     y3 = y3[len(taps)-1:] 
     y4 = y4[len(taps)-1:] 
-    print "fir_filter test passed? ", np.allclose(y, y2, rtol=1e-10) 
-    print "fft_filter test passed? ", np.allclose(y, y3, rtol=1e-10) 
-    print "lfilter test passed? ",    np.allclose(y, y4, rtol=1e-10) 
+    print("fir_filter test passed?", np.allclose(y, y2, rtol=1e-10))
+    print("fft_filter test passed?", np.allclose(y, y3, rtol=1e-10)) 
+    print("lfilter test passed?",    np.allclose(y, y4, rtol=1e-10))
     
 

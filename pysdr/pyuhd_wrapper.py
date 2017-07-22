@@ -1,3 +1,5 @@
+from __future__ import print_function # allows python3 print() to work in python2
+
 from uhd import libpyuhd
 import numpy as np
 
@@ -30,7 +32,7 @@ class usrp_source(libpyuhd.usrp.multi_usrp):
         self.metadata = libpyuhd.types.rx_metadata()
         self.streamer = self.get_rx_stream(st_args) # keep the streamer an object of usrp
         buffer_samps = self.streamer.get_max_num_samps()
-        print "max_num_samps: ", buffer_samps
+        print("max_num_samps:", buffer_samps)
         self.recv_buffer = np.zeros(buffer_samps, dtype=np.complex64) # buffer is also an object of usrp
         stream_cmd = libpyuhd.types.stream_cmd(libpyuhd.types.stream_mode.start_cont)
         stream_cmd.stream_now = True
@@ -39,7 +41,7 @@ class usrp_source(libpyuhd.usrp.multi_usrp):
     def recv(self):
         num_samps = self.streamer.recv(self.recv_buffer, self.metadata) # receive samples! returns number of samples
         if num_samps == 0:
-            print "APPARENTLY ITS NOT A BLOCKING FUNCTION!"
+            print("APPARENTLY ITS NOT A BLOCKING FUNCTION!")
         # check if there were any errors        
         if self.metadata.error_code != libpyuhd.types.rx_metadata_error_code.none:
             print(self.metadata.strerror())

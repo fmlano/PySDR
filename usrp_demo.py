@@ -1,6 +1,9 @@
 #!/usr/bin/env python
 
+from __future__ import print_function # allows python3 print() to work in python2
+
 import pysdr # our python package
+import pysdruhd as uhd # nathans amazing uhd wrapper
 import numpy as np
 import time 
 from scipy.signal import firwin # FIR filter design using the window method
@@ -72,7 +75,7 @@ usrp_command_queue = Queue()
 
 def gain_callback(attr, old, new):
     gain = new # set new gain (leave it as a string)
-    print "Setting gain to ", gain
+    print("Setting gain to ", gain)
     command = 'set_gain(' + gain + ')'
     usrp_command_queue.put(command)
 
@@ -80,7 +83,7 @@ def freq_callback(attr, old, new):
     center_freq = float(new) # TextInput provides a string
     f = np.linspace(-samp_rate/2.0, samp_rate/2.0, fft_size) + center_freq
     fft_line.data_source.data['x'] = f/1e6 # update x axis of freq sink
-    print "Setting freq to ", center_freq
+    print("Setting freq to ", center_freq)
     command = 'set_center_freq(' + str(center_freq) + ')'
     usrp_command_queue.put(command)
 
@@ -143,16 +146,20 @@ def process_samples(samples):
 ###############
 
 def run_usrp():
+    usrp = uhd.Usrp(streams={"A:A": {'frequency':center_freq, 'gain':60}}, rate=samp_rate) # need to use A:0 for x310
+    usrp.send_stream_command({'now': True}) # start streaming
+    ''' uncomment this to use Ettus' pyuhd
     usrp = pysdr.usrp_source('') # this is where you would choose which addr or usrp type
     usrp.set_samp_rate(samp_rate) 
     usrp.set_center_freq(center_freq)
     usrp.set_gain(gain)
     usrp.prepare_to_rx()
+    '''
     while True: # endless loop of rx samples
         if not usrp_command_queue.empty():  # check if there's a usrp command in the queue
             command = usrp_command_queue.get()
             eval('usrp.' + command) # messy way to do it!
-        samples = usrp.recv() # receive samples. pretty sure this function is blocking
+        samples, metadata = usrp.recv() # receive samples. pretty sure this function is blocking
         process_samples(samples) # send samples to DSP
         
 # We do run_usrp() and process_samples() in a 2nd thread, while the Bokeh GUI stuff is in the main thread

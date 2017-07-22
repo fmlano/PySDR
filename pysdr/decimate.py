@@ -1,3 +1,5 @@
+from __future__ import print_function # allows python3 print() to work in python2
+
 import numpy as np
 import time
 
@@ -32,5 +34,5 @@ if __name__ == '__main__': # (call this script directly to run tests)
     for i in range(len(x)/batch_size):
         x_input = x[i*batch_size:(i+1)*batch_size] # this line represents the incoming stream
         y2 = np.concatenate((y2, decimator1.decimate(x_input)))
-    print "decimator test passed? ", np.array_equal(y[0:len(y2)], y2) # check if entire array is equal. dont include the very end because partial batches are not processed
+    print("decimator test passed?", np.array_equal(y[0:len(y2)], y2)) # check if entire array is equal. dont include the very end because partial batches are not processed
    
