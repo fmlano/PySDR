@@ -18,7 +18,7 @@ center_freq = 101.1e6
 samp_rate = 12.5e6
 gain = 50
 fft_size = 512               # output size of fft, the input size is the samples_per_batch
-waterfall_samples = 100      # number of rows of the waterfall
+waterfall_samples = 50      # number of rows of the waterfall
 samples_in_time_plots = 500  # should be less than samples per batch (2044 for B200)
 
 ##############
@@ -147,6 +147,7 @@ def process_samples(samples):
 
 def run_usrp():
     usrp = uhd.Usrp(streams={"A:A": {'antenna': 'RX2', 'frequency':center_freq, 'gain':60}}, rate=samp_rate) # need to use A:0 for x310
+    time.sleep(2.0)
     usrp.send_stream_command({'now': True}) # start streaming
     ''' uncomment this to use Ettus' pyuhd
     usrp = pysdr.usrp_source('') # this is where you would choose which addr or usrp type
@@ -160,7 +161,7 @@ def run_usrp():
             command = usrp_command_queue.get()
             eval('usrp.' + command) # messy way to do it!
         samples, metadata = usrp.recv() # receive samples. pretty sure this function is blocking
-        process_samples(samples) # send samples to DSP
+        process_samples(samples[0,:]) # send samples to DSP
         
 # We do run_usrp() and process_samples() in a 2nd thread, while the Bokeh GUI stuff is in the main thread
 usrp_dsp_process = Process(target=run_usrp) 
