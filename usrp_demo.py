@@ -15,7 +15,7 @@ from multiprocessing import Process, Manager, Queue
 # Parameters #
 ##############
 center_freq = 101.1e6
-samp_rate = 1e6
+samp_rate = 12.5e6
 gain = 50
 fft_size = 512               # output size of fft, the input size is the samples_per_batch
 waterfall_samples = 100      # number of rows of the waterfall
@@ -76,7 +76,7 @@ usrp_command_queue = Queue()
 def gain_callback(attr, old, new):
     gain = new # set new gain (leave it as a string)
     print("Setting gain to ", gain)
-    command = 'set_gain(' + gain + ')'
+    command = 'set_gain("A:A",' + gain + ')'
     usrp_command_queue.put(command)
 
 def freq_callback(attr, old, new):
@@ -84,7 +84,7 @@ def freq_callback(attr, old, new):
     f = np.linspace(-samp_rate/2.0, samp_rate/2.0, fft_size) + center_freq
     fft_line.data_source.data['x'] = f/1e6 # update x axis of freq sink
     print("Setting freq to ", center_freq)
-    command = 'set_center_freq(' + str(center_freq) + ')'
+    command = 'set_frequency("A:A",' + str(center_freq) + ')'
     usrp_command_queue.put(command)
 
 # gain selector
@@ -96,7 +96,7 @@ freq_input = TextInput(value=str(center_freq), title="Center Freq [Hz]")
 freq_input.on_change('value', freq_callback)
 
 widgets = row([widgetbox(gain_select, freq_input), utilization_plot]) # widgetbox() makes them a bit tighter grouped than column()
-plots = gridplot([[fft_plot, time_plot], [waterfall_plot, iq_plot]], sizing_mode="scale_width", merge_tools=False) # Spacer(width=20, sizing_mode="fixed")
+plots = gridplot([[fft_plot, time_plot], [waterfall_plot, iq_plot]], sizing_mode="scale_width", ) # Spacer(width=20, sizing_mode="fixed")
 
 # This function gets called periodically, and is how the "real-time streaming mode" works   
 def plot_update():  
@@ -146,7 +146,7 @@ def process_samples(samples):
 ###############
 
 def run_usrp():
-    usrp = uhd.Usrp(streams={"A:A": {'frequency':center_freq, 'gain':60}}, rate=samp_rate) # need to use A:0 for x310
+    usrp = uhd.Usrp(streams={"A:A": {'antenna': 'RX2', 'frequency':center_freq, 'gain':60}}, rate=samp_rate) # need to use A:0 for x310
     usrp.send_stream_command({'now': True}) # start streaming
     ''' uncomment this to use Ettus' pyuhd
     usrp = pysdr.usrp_source('') # this is where you would choose which addr or usrp type
