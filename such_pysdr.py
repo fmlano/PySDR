@@ -1,6 +1,6 @@
 ''' 
 usage:
-  specify iq file (binary of float32s) in the parameters below
+  specify iq file (e.g. made with file_sink in gnuradio) in the parameters below
   bokeh serve such_pysdr.py
 
 open in your browser:
