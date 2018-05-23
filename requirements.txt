@@ -3,3 +3,4 @@ flask
 bokeh
 pyyaml
 pyrtlsdr
+scipy
