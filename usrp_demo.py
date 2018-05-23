@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+# run using: python usrp_demo.py
+
 from __future__ import print_function # allows python3 print() to work in python2
 
 import pysdr # our python package
@@ -15,11 +17,12 @@ from multiprocessing import Process, Manager, Queue
 # Parameters #
 ##############
 center_freq = 101.1e6
-samp_rate = 12.5e6
+samp_rate = 10e6 # the master clock rate must be an integer multiple of the sampling rate, so the master clock will be set relative to this unless it's set specifically when the USRP object is created
 gain = 50
 fft_size = 512               # output size of fft, the input size is the samples_per_batch
-waterfall_samples = 50      # number of rows of the waterfall
+waterfall_samples = 200      # number of rows of the waterfall
 samples_in_time_plots = 500  # should be less than samples per batch (2044 for B200)
+gui_refresh_period = 0.1  # [seconds] time between updates of GUIs, which means what percent of samples we are actually visualizing
 
 ##############
 # SET UP GUI #
@@ -76,7 +79,8 @@ usrp_command_queue = Queue()
 def gain_callback(attr, old, new):
     gain = new # set new gain (leave it as a string)
     print("Setting gain to ", gain)
-    command = 'set_gain("A:A",' + gain + ')'
+    #command = 'set_gain("A:A",' + gain + ')' # pysdruhd version
+    command = 'set_gain(' + gain + ')'
     usrp_command_queue.put(command)
 
 def freq_callback(attr, old, new):
@@ -84,7 +88,8 @@ def freq_callback(attr, old, new):
     f = np.linspace(-samp_rate/2.0, samp_rate/2.0, fft_size) + center_freq
     fft_line.data_source.data['x'] = f/1e6 # update x axis of freq sink
     print("Setting freq to ", center_freq)
-    command = 'set_frequency("A:A",' + str(center_freq) + ')'
+    #command = 'set_frequency("A:A",' + str(center_freq) + ')' # pysdruhd version
+    command = 'set_center_freq(' + str(center_freq) + ')'
     usrp_command_queue.put(command)
 
 # gain selector
@@ -115,7 +120,7 @@ def plot_update():
 # create a streaming-type FIR filter (this should act the same as a FIR filter block in GNU Radio)
 taps = firwin(numtaps=100, cutoff=200e3, nyq=samp_rate) # scipy's filter designer
 prefilter = pysdr.fir_filter(taps)
-accumulator = pysdr.accumulator(100000) # accumulates batches of samples so we can process more at a time. arg is min amount to store
+accumulator = pysdr.accumulator(int(gui_refresh_period * samp_rate)) # accumulates batches of samples so we can process more at a time. arg is min amount to store
 
 ###############
 # DSP Routine #
@@ -127,7 +132,7 @@ def process_samples(samples):
     if accumulator.accumulate_samples(samples): # add samples to accumulator (returns True when we have enough)
         samples = accumulator.samples # messy way of doing it but it works
         #samples = prefilter.filter(samples) # uncomment this to add a filter
-        PSD = 10.0 * np.log10(np.abs(np.fft.fftshift(np.fft.fft(samples, fft_size)/float(fft_size)))**2) # calcs PSD
+        PSD = 10.0 * np.log10(np.abs(np.fft.fftshift(np.fft.fft(samples, fft_size)/float(fft_size)))**2) # calcs PSD, crops input to size of fft
         # add row to waterfall
         waterfall = waterfall_plot._input_buffer['waterfall'][0] # pull waterfall from buffer
         waterfall[:] = np.roll(waterfall, -1, axis=0) # shifts waterfall 1 row
@@ -146,22 +151,33 @@ def process_samples(samples):
 ###############
 
 def run_usrp():
+    ''' uncomment to use pysdruhd
     usrp = uhd.Usrp(streams={"A:A": {'antenna': 'RX2', 'frequency':center_freq, 'gain':60}}, rate=samp_rate) # need to use A:0 for x310
     time.sleep(2.0)
     usrp.send_stream_command({'now': True}) # start streaming
-    ''' uncomment this to use Ettus' pyuhd
-    usrp = pysdr.usrp_source('') # this is where you would choose which addr or usrp type
+    '''
+    usrp = pysdr.usrp_source('num_recv_frames=100') # this is where you would choose which addr or usrp type. see below for other options
+    # num_recv_frames   - sets the maximum number of frames that can be buffered, so increasing this will help avoid ERROR_CODE_OVERFLOW. by default it's like 16 or so
+    # recv_frame_size   - the size of each recv frame in bytes. default is 8192 which translates to 2044 samples returned by recv() each time
+    # master_clock_rate - forces master clock rate to a certain value.  keep in mind this must be an integer multiple of the sample rate
+    # addr              - you can specify a certain USRP IP with this, e.g. addr=192.168.1.1
+    # serial            - choose a specific radio, e.g. serial=F49849
+    
     usrp.set_samp_rate(samp_rate) 
     usrp.set_center_freq(center_freq)
     usrp.set_gain(gain)
     usrp.prepare_to_rx()
-    '''
     while True: # endless loop of rx samples
         if not usrp_command_queue.empty():  # check if there's a usrp command in the queue
             command = usrp_command_queue.get()
             eval('usrp.' + command) # messy way to do it!
+        ''' pysdruhd version
         samples, metadata = usrp.recv() # receive samples. pretty sure this function is blocking
         process_samples(samples[0,:]) # send samples to DSP
+        '''
+        # pyuhd version
+        samples = usrp.recv()
+        process_samples(samples) # send samples to DSP
         
 # We do run_usrp() and process_samples() in a 2nd thread, while the Bokeh GUI stuff is in the main thread
 usrp_dsp_process = Process(target=run_usrp) 

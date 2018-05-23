@@ -8,7 +8,7 @@ from tornado.wsgi import WSGIContainer
 
 from bokeh.application import Application
 from bokeh.application.handlers import FunctionHandler
-from bokeh.embed import autoload_server
+from bokeh.embed import server_document
 from bokeh.server.server import Server
 from bokeh.util.browser import view # utility to Open a browser to view the specified location.
 
@@ -25,7 +25,7 @@ class pysdr_app:
         # GET routine for root page
         @self.flask_app.route('/', methods=['GET'])  # going to http://localhost:5006 or whatever will trigger this route
         def bkapp_page():
-            script = autoload_server(url='http://localhost:5006/bkapp') # switch to server_document when pip uses new version of bokeh, autoload_server is being depreciated
+            script = server_document(url='http://localhost:5006/bkapp')
             return render_template('index.html', script=script)
     
     def assemble_bokeh_doc(self, widgets, plots, plot_update, theme):
