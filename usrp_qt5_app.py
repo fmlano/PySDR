@@ -19,13 +19,13 @@ import pyqtgraph as pg
 
 
 # Parameters
-rx_rate = 10e6
+rx_rate = 1e6
 rx_freq = 100e6
 rx_channels = [0]
 duration = 2 # in seconds
 fft_size = 512
-num_rows = 500
-min_value = -10.0 # dB. for waterfall.  -10 dB is good for the LTE case
+num_rows = 100
+min_value = -20.0 # dB. for waterfall.  -10 dB is good for the LTE case
 
 CLOCK_TIMEOUT = 1000  # 1000mS timeout for external clock locking
 INIT_DELAY = 0.05  # 50mS initial delay before transmit
@@ -69,26 +69,25 @@ def benchmark_rx_rate(usrp, rx_streamer, timer_elapsed_event, rx_statistics, win
     rate = usrp.get_rx_rate()
     # Receive until we get the signal to stop
     i = 0
+    data = min_value * np.ones((fft_size, num_rows))
     while not timer_elapsed_event.is_set():
         try:
             num_rx_samps += rx_streamer.recv(recv_buffer, metadata) * num_channels
             i += 1
-            if i == 300:
+            if i == 50:
                 win.time_plot_curve_i.setData(np.arange(len(recv_buffer[0])), np.real(recv_buffer[0])) # time plot
                 win.time_plot_curve_q.setData(np.arange(len(recv_buffer[0])), np.imag(recv_buffer[0])) # time plot
-                fft = 10.0*np.log10(np.abs(np.fft.fftshift(np.fft.fft(recv_buffer[0]))))
+                fft = 10.0*np.log10(np.abs(np.fft.fftshift(np.fft.fft(recv_buffer[0], fft_size))))
                 win.time_plot_curve_fft.setData(np.arange(len(fft)), fft) # FFT plot
                 i = 0
             
                 # create waterfall
-                samps = recv_buffer[0]
-                data = np.zeros((fft_size, num_rows))
-                for ii in range(num_rows):
-                    data[:,ii] = 10.0*np.log10(np.abs(np.fft.fftshift(np.fft.fft(samps[0:fft_size]))))
+                data[:] = np.roll(data, 1, axis=1) # shifts waterfall 1 row
+                data[:,0] = fft # fill last row with new fft results
                     
                 # Display waterfall
                 data = np.clip(data, min_value, 100.0) # otherwise we get a -infty and an error
-                win.im_widget.setImage(data)
+                win.imageitem.setImage(data, autoLevels=True)
             
             
         except RuntimeError as ex:
@@ -163,13 +162,17 @@ class Example(QWidget):
         grid.addWidget(self.time_plot, 1, 0)
         
         # Create waterfall plot
-        self.im_widget = pg.ImageView()
-        self.im_widget.ui.histogram.hide() # comment to show histogram
-        self.im_widget.ui.menuBtn.hide()
-        self.im_widget.ui.roiBtn.hide()
-        self.im_widget.setPredefinedGradient('thermal') # options are thermal, flame, yellowy, bipolar, spectrum, cyclic, greyclip, grey
-        grid.addWidget(self.im_widget, 2, 0)
-        self.im_widget.show()
+        self.waterfall = pg.PlotWidget()
+        self.imageitem = pg.ImageItem()
+        self.waterfall.addItem(self.imageitem)
+        self.waterfall.hideAxis('left')
+        self.waterfall.hideAxis('bottom')
+        #self.im_widget.ui.histogram.hide() # comment to show histogram
+        #self.im_widget.ui.menuBtn.hide()
+        #self.im_widget.ui.roiBtn.hide()
+        #self.imageitem.setPredefinedGradient('thermal') # options are thermal, flame, yellowy, bipolar, spectrum, cyclic, greyclip, grey
+        grid.addWidget(self.waterfall, 2, 0)
+        #self.im_widget.show()
 
         self.setGeometry(300, 300, 300, 220)
         self.setWindowTitle('RTL-SDR Demo')
@@ -210,12 +213,12 @@ if __name__ == "__main__":
     # Spawn the receive test thread
     usrp.set_rx_rate(rx_rate)
     usrp.set_rx_freq(uhd.libpyuhd.types.tune_request(rx_freq), 0)
-    
+    usrp.set_rx_gain(50, 0)
     st_args = uhd.usrp.StreamArgs("fc32", "sc16") # host/computer format, otw format
     st_args.channels = rx_channels
     rx_streamer = usrp.get_rx_stream(st_args)
     print("max samps per buffer: ", rx_streamer.get_max_num_samps()) # affected by recv_frame_size
-    rx_thread = threading.Thread(target=benchmark_rx_rate, args=(usrp, rx_streamer, quit_event, rx_statistics, win))
+    rx_thread = threading.Thread(target=benchmark_rx_rate, args=(usrp, rx_streamer, quit_event, rx_statistics, ex))
     threads.append(rx_thread)
     rx_thread.start()
     rx_thread.setName("bmark_rx_stream")
