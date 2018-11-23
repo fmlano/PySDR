@@ -13,7 +13,8 @@ import threading
 import logging
 import numpy as np
 import uhd
-from PyQt5 import QtCore, QtWidgets
+from PyQt5.QtWidgets import QApplication, QWidget, QGridLayout
+#from PyQt4.QtGui import QApplication, QWidget, QGridLayout
 import pyqtgraph as pg
 
 
@@ -31,16 +32,6 @@ INIT_DELAY = 0.05  # 50mS initial delay before transmit
 
 
 
-
-def check_channels(usrp):
-    """Check that the device has sufficient RX ch available"""
-    # Check that each channel specified is less than the number of total number of rx channels
-    # the device can support
-    dev_rx_channels = usrp.get_rx_num_channels()
-    if not all(map((lambda chan: chan < dev_rx_channels), rx_channels)):
-        logger.error("Invalid RX channel(s) specified.")
-        return [], []
-    return rx_channels
 
 
 def benchmark_rx_rate(usrp, rx_streamer, timer_elapsed_event, rx_statistics, win):
@@ -83,10 +74,10 @@ def benchmark_rx_rate(usrp, rx_streamer, timer_elapsed_event, rx_statistics, win
             num_rx_samps += rx_streamer.recv(recv_buffer, metadata) * num_channels
             i += 1
             if i == 300:
-                win.plotDataItem2.setData(np.arange(len(recv_buffer[0])), np.real(recv_buffer[0])) # time plot
-                win.plotDataItem3.setData(np.arange(len(recv_buffer[0])), np.imag(recv_buffer[0])) # time plot
+                win.time_plot_curve_i.setData(np.arange(len(recv_buffer[0])), np.real(recv_buffer[0])) # time plot
+                win.time_plot_curve_q.setData(np.arange(len(recv_buffer[0])), np.imag(recv_buffer[0])) # time plot
                 fft = 10.0*np.log10(np.abs(np.fft.fftshift(np.fft.fft(recv_buffer[0]))))
-                win.plotDataItem1.setData(np.arange(len(fft)), fft) # FFT plot
+                win.time_plot_curve_fft.setData(np.arange(len(fft)), fft) # FFT plot
                 i = 0
             
                 # create waterfall
@@ -150,53 +141,53 @@ def benchmark_rx_rate(usrp, rx_streamer, timer_elapsed_event, rx_statistics, win
 
 
 
-'''
-class MyWidget(pg.GraphicsWindow):
-    def __init__(self, parent=None):
-        super(MyWidget, self).__init__(parent=parent)
-
-
-'''
-
+class Example(QWidget):
+    def __init__(self):
+        super().__init__()
         
+        # Set up layout
+        grid = QGridLayout()
+        self.setLayout(grid)
         
-def main():
-    app = QtWidgets.QApplication([]) # has to be called (just once) at the beginning of a qt app
+        pg.setConfigOptions(antialias=False) # True seems to work as well
 
-    pg.setConfigOptions(antialias=False) # True seems to work as well
+        # create time plot
+        self.time_plot = pg.PlotWidget()
+        self.time_plot_curve_i = self.time_plot.plot([]) 
+        self.time_plot_curve_q = self.time_plot.plot([]) 
+        grid.addWidget(self.time_plot, 0, 0)
+        
+        # create fft plot
+        self.time_plot = pg.PlotWidget()
+        self.time_plot_curve_fft = self.time_plot.plot([]) 
+        grid.addWidget(self.time_plot, 1, 0)
+        
+        # Create waterfall plot
+        self.im_widget = pg.ImageView()
+        self.im_widget.ui.histogram.hide() # comment to show histogram
+        self.im_widget.ui.menuBtn.hide()
+        self.im_widget.ui.roiBtn.hide()
+        self.im_widget.setPredefinedGradient('thermal') # options are thermal, flame, yellowy, bipolar, spectrum, cyclic, greyclip, grey
+        grid.addWidget(self.im_widget, 2, 0)
+        self.im_widget.show()
 
-    win = pg.GraphicsWindow(title="window title")
-    win.resize(1500,600)
-    win.setLayout(QtWidgets.QVBoxLayout()) # create and set a layout that will tile plots horizontally
+        self.setGeometry(300, 300, 300, 220)
+        self.setWindowTitle('RTL-SDR Demo')
     
-    # create first plot
-    win.plotItem1 = win.addPlot(title="Plot 1 Title") # adds a plot
-    win.plotItem1.setRange(yRange=[-20, 20])
-    win.plotDataItem1 = win.plotItem1.plot([]) # adds a curve to the plot
-    
-    # create second plot
-    win.plotItem2 = win.addPlot(title="Plot 2 Title")
-    win.plotDataItem2 = win.plotItem2.plot([]) 
-    win.plotDataItem3 = win.plotItem2.plot([]) 
-    
-    # Create waterfall plot
-    win.im_widget = pg.ImageView(win)
-    win.im_widget.ui.histogram.hide() # comment to show histogram
-    win.im_widget.ui.menuBtn.hide()
-    win.im_widget.ui.roiBtn.hide()
-    win.im_widget.setPredefinedGradient('thermal') # options are thermal, flame, yellowy, bipolar, spectrum, cyclic, greyclip, grey
-    win.layout().addWidget(win.im_widget)
-    win.im_widget.show()
+        self.show() # not blocking
+        
+            
+            
+if __name__ == "__main__":
+    # Setup the logger with our custom timestamp formatting
+    global logger
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.DEBUG)
+    console = logging.StreamHandler()
+    logger.addHandler(console)
 
-
-    win.show()
-    win.raise_()
-    
-
-    
-    
-    
-    """RX samples and write to file"""
+    app = QApplication(sys.argv)
+    ex = Example()
 
     # Setup a usrp device
     usrp = uhd.usrp.MultiUSRP("num_recv_frames=1000") # USRP args go here, see https://files.ettus.com/manual/page_transport.html and https://files.ettus.com/manual/page_configuration.html#config_devaddr
@@ -204,9 +195,7 @@ def main():
     # Always select the subdevice first, the channel mapping affects the other settings
     #usrp.set_rx_subdev_spec(uhd.usrp.SubdevSpec(args.rx_subdev))
 
-
-    rx_channels = check_channels(usrp) # not quite sure if i need this
-
+    rx_channels = [0] # receive on the first channel
 
     usrp.set_time_now(uhd.types.TimeSpec(0.0))
     
@@ -225,7 +214,7 @@ def main():
     st_args = uhd.usrp.StreamArgs("fc32", "sc16") # host/computer format, otw format
     st_args.channels = rx_channels
     rx_streamer = usrp.get_rx_stream(st_args)
-    print "max samps per buffer: ", rx_streamer.get_max_num_samps() # affected by recv_frame_size
+    print("max samps per buffer: ", rx_streamer.get_max_num_samps()) # affected by recv_frame_size
     rx_thread = threading.Thread(target=benchmark_rx_rate, args=(usrp, rx_streamer, quit_event, rx_statistics, win))
     threads.append(rx_thread)
     rx_thread.start()
@@ -245,22 +234,5 @@ def main():
         rx_streamer.recv(recv_buffer, metadata)
     del usrp # stops USRP cleanly, otherwise we sometimes get libusb errors when starting back up
         
-    
-    #print_statistics(rx_statistics)
-
-    return True
-
-
-if __name__ == "__main__":
-    # Setup the logger with our custom timestamp formatting
-    global logger
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
-    console = logging.StreamHandler()
-    logger.addHandler(console)
-
-    # Vamos, vamos, vamos!
-    sys.exit(not main())
-    pg.QtGui.QApplication.exec_() # you MUST put this at the end
     
     
