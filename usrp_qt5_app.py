@@ -19,13 +19,14 @@ import pyqtgraph as pg
 
 
 # Parameters
-rx_rate = 1e6
+rx_rate = 2e6
 rx_freq = 100e6
 rx_channels = [0]
 duration = 2 # in seconds
 fft_size = 512
 num_rows = 100
 min_value = -20.0 # dB. for waterfall.  -10 dB is good for the LTE case
+num_to_avg = 10
 
 CLOCK_TIMEOUT = 1000  # 1000mS timeout for external clock locking
 INIT_DELAY = 0.05  # 50mS initial delay before transmit
@@ -69,27 +70,37 @@ def benchmark_rx_rate(usrp, rx_streamer, timer_elapsed_event, rx_statistics, win
     rate = usrp.get_rx_rate()
     # Receive until we get the signal to stop
     i = 0
+    ii = 0
     data = min_value * np.ones((fft_size, num_rows))
+    running_avg = np.zeros(fft_size)
     while not timer_elapsed_event.is_set():
         try:
             num_rx_samps += rx_streamer.recv(recv_buffer, metadata) * num_channels
             i += 1
-            if i == 50:
-                win.time_plot_curve_i.setData(np.arange(len(recv_buffer[0])), np.real(recv_buffer[0])) # time plot
-                win.time_plot_curve_q.setData(np.arange(len(recv_buffer[0])), np.imag(recv_buffer[0])) # time plot
-                fft = 10.0*np.log10(np.abs(np.fft.fftshift(np.fft.fft(recv_buffer[0], fft_size))))
-                win.time_plot_curve_fft.setData(np.arange(len(fft)), fft) # FFT plot
+            if i == 10: # used to chunck decimate
+                running_avg += np.abs(np.fft.fft(recv_buffer[0], fft_size))
                 i = 0
-            
-                # create waterfall
-                data[:] = np.roll(data, 1, axis=1) # shifts waterfall 1 row
-                data[:,0] = fft # fill last row with new fft results
+                ii += 1
+                if ii == num_to_avg:
+                    win.time_plot_curve_i.setData(np.arange(500), np.real(recv_buffer[0][0:500])) # time plot
+                    win.time_plot_curve_q.setData(np.arange(500), np.imag(recv_buffer[0][0:500])) # time plot
                     
-                # Display waterfall
-                data = np.clip(data, min_value, 100.0) # otherwise we get a -infty and an error
-                win.imageitem.setImage(data, autoLevels=True)
-            
-            
+                    fft = 10.0*np.log10(np.fft.fftshift(running_avg/num_to_avg))
+                    
+                    win.time_plot_curve_fft.setData(np.arange(len(fft)), fft) # FFT plot
+                    
+                
+                    # create waterfall
+                    data[:] = np.roll(data, 1, axis=1) # shifts waterfall 1 row
+                    data[:,0] = fft # fill last row with new fft results
+                        
+                    # Display waterfall
+                    data = np.clip(data, min_value, 100.0) # otherwise we get a -infty and an error
+                    win.imageitem.setImage(data, autoLevels=True)
+                    
+                    running_avg = np.zeros(fft_size)
+                    ii = 0
+                
         except RuntimeError as ex:
             logger.error("Runtime error in receive: %s", ex)
             return
@@ -151,13 +162,15 @@ class Example(QWidget):
         pg.setConfigOptions(antialias=False) # True seems to work as well
 
         # create time plot
-        self.time_plot = pg.PlotWidget()
+        self.time_plot = pg.PlotWidget(lockAspect=True, enableMouse=False, enableMenu=False, name="Time")
+        self.time_plot.setYRange(-0.1, 0.1)
         self.time_plot_curve_i = self.time_plot.plot([]) 
         self.time_plot_curve_q = self.time_plot.plot([]) 
         grid.addWidget(self.time_plot, 0, 0)
         
         # create fft plot
         self.time_plot = pg.PlotWidget()
+        self.time_plot.setYRange(-20.0, 0.0)
         self.time_plot_curve_fft = self.time_plot.plot([]) 
         grid.addWidget(self.time_plot, 1, 0)
         
@@ -233,7 +246,7 @@ if __name__ == "__main__":
     # These three lines make sure that when you close the Qt window, the USRP closes cleanly
     recv_buffer = np.empty((1, rx_streamer.get_max_num_samps()), dtype=np.complex64)
     metadata = uhd.types.RXMetadata()
-    for i in range(100):
+    for i in range(10):
         rx_streamer.recv(recv_buffer, metadata)
     del usrp # stops USRP cleanly, otherwise we sometimes get libusb errors when starting back up
         
