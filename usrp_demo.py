@@ -13,20 +13,20 @@ import threading
 import logging
 import numpy as np
 import uhd
-from PyQt5.QtWidgets import QApplication, QWidget, QGridLayout
-#from PyQt4.QtGui import QApplication, QWidget, QGridLayout
+from PyQt5.QtWidgets import QApplication, QWidget, QGridLayout, QPushButton
+from PyQt5.QtCore import QRect
 import pyqtgraph as pg
 
 
 # Parameters
-rx_rate = 2e6
+rx_rate = 10e6
 rx_freq = 100e6
 rx_channels = [0]
 duration = 2 # in seconds
 fft_size = 512
 num_rows = 100
-min_value = -20.0 # dB. for waterfall.  -10 dB is good for the LTE case
-num_to_avg = 10
+num_to_avg = 50
+chunk_decimation_factor = 10 # so that we dont processes 100% of samples
 
 CLOCK_TIMEOUT = 1000  # 1000mS timeout for external clock locking
 INIT_DELAY = 0.05  # 50mS initial delay before transmit
@@ -37,19 +37,17 @@ INIT_DELAY = 0.05  # 50mS initial delay before transmit
 
 def benchmark_rx_rate(usrp, rx_streamer, timer_elapsed_event, rx_statistics, win):
     """Benchmark the receive chain"""
-    logger.info("Testing receive rate {:.3f} Msps on {:d} channels".format(
-        usrp.get_rx_rate()/1e6, rx_streamer.get_num_channels()))
+    logger.info("Testing receive rate {:.3f} Msps on {:d} channels".format(usrp.get_rx_rate()/1e6, 1))
 
     # Make a receive buffer
-    num_channels = rx_streamer.get_num_channels()
     max_samps_per_packet = rx_streamer.get_max_num_samps()
     # TODO: The C++ code uses rx_cpu type here. Do we want to use that to set dtype?
-    recv_buffer = np.empty((num_channels, max_samps_per_packet), dtype=np.complex64)
+    recv_buffer = np.empty((1, max_samps_per_packet), dtype=np.complex64)
     metadata = uhd.types.RXMetadata()
 
     # Craft and send the Stream Command
     stream_cmd = uhd.types.StreamCMD(uhd.types.StreamMode.start_cont)
-    stream_cmd.stream_now = (num_channels == 1)
+    stream_cmd.stream_now = True
     stream_cmd.time_spec = uhd.types.TimeSpec(usrp.get_time_now().get_real_secs() + INIT_DELAY)
     rx_streamer.issue_stream_cmd(stream_cmd)
 
@@ -60,7 +58,6 @@ def benchmark_rx_rate(usrp, rx_streamer, timer_elapsed_event, rx_statistics, win
     had_an_overflow = False
     last_overflow = uhd.types.TimeSpec(0)
     # Setup the statistic counters
-    num_rx_samps = 0
     num_rx_dropped = 0
     num_rx_overruns = 0
     num_rx_seqerr = 0
@@ -71,35 +68,50 @@ def benchmark_rx_rate(usrp, rx_streamer, timer_elapsed_event, rx_statistics, win
     # Receive until we get the signal to stop
     i = 0
     ii = 0
-    data = min_value * np.ones((fft_size, num_rows))
+    rx_streamer.recv(recv_buffer, metadata) # to see around what level we are receiving at, to init waterfall 2d array
+    avg_value = np.mean(10.0*np.log10(np.abs(np.fft.fft(recv_buffer[0], fft_size))))
+    data = avg_value * np.ones((fft_size, num_rows))
     running_avg = np.zeros(fft_size)
+    first_time = True
+    f = np.linspace(rx_freq - rx_rate/2.0, rx_freq + rx_rate/2.0, fft_size) / 1e6
+    t = np.arange(500)/rx_rate*1e6
     while not timer_elapsed_event.is_set():
         try:
-            num_rx_samps += rx_streamer.recv(recv_buffer, metadata) * num_channels
+            rx_streamer.recv(recv_buffer, metadata)
             i += 1
-            if i == 10: # used to chunck decimate
+            if i == chunk_decimation_factor: # used to chunck decimate, so that we dont have to process 100% of samples...
                 running_avg += np.abs(np.fft.fft(recv_buffer[0], fft_size))
                 i = 0
                 ii += 1
                 if ii == num_to_avg:
-                    win.time_plot_curve_i.setData(np.arange(500), np.real(recv_buffer[0][0:500])) # time plot
-                    win.time_plot_curve_q.setData(np.arange(500), np.imag(recv_buffer[0][0:500])) # time plot
+                    win.time_plot_curve_i.setData(t, np.real(recv_buffer[0][0:500])) # time plot
+                    win.time_plot_curve_q.setData(t, np.imag(recv_buffer[0][0:500])) # time plot
                     
                     fft = 10.0*np.log10(np.fft.fftshift(running_avg/num_to_avg))
                     
-                    win.time_plot_curve_fft.setData(np.arange(len(fft)), fft) # FFT plot
-                    
+                    win.fft_plot_curve_fft.setData(f, fft) # FFT plot
                 
                     # create waterfall
                     data[:] = np.roll(data, 1, axis=1) # shifts waterfall 1 row
                     data[:,0] = fft # fill last row with new fft results
                         
                     # Display waterfall
-                    data = np.clip(data, min_value, 100.0) # otherwise we get a -infty and an error
-                    win.imageitem.setImage(data, autoLevels=True)
+                    win.imageitem.setImage(data) # auto ranges by default
                     
                     running_avg = np.zeros(fft_size)
                     ii = 0
+                    
+                    if first_time:
+                        first_time = False
+                        # time and freq adjustments
+                        win.time_plot.autoRange()
+                        win.fft_plot.autoRange()
+                        # waterfall adjustments
+                        samples_per_row = len(recv_buffer[0]) * num_to_avg * chunk_decimation_factor / rx_rate
+                        win.imageitem.translate((rx_freq - rx_rate/2.0)/1e6, 0)
+                        win.imageitem.scale(rx_rate/fft_size/1e6, samples_per_row)
+                        win.waterfall.autoRange()
+        
                 
         except RuntimeError as ex:
             logger.error("Runtime error in receive: %s", ex)
@@ -129,7 +141,7 @@ def benchmark_rx_rate(usrp, rx_streamer, timer_elapsed_event, rx_statistics, win
             # Radio core will be in the idle state. Issue stream command to restart streaming.
             stream_cmd.time_spec = uhd.types.TimeSpec(
                 usrp.get_time_now().get_real_secs() + INIT_DELAY)
-            stream_cmd.stream_now = (num_channels == 1)
+            stream_cmd.stream_now = True
             rx_streamer.issue_stream_cmd(stream_cmd)
         elif metadata.error_code == uhd.types.RXMetadataErrorCode.timeout:
             logger.warning("Receiver error: %s, continuing...", metadata.strerror())
@@ -138,13 +150,6 @@ def benchmark_rx_rate(usrp, rx_streamer, timer_elapsed_event, rx_statistics, win
             logger.error("Receiver error: %s", metadata.strerror())
             logger.error("Unexpected error on receive, continuing...")
 
-    # Return the statistics to the main thread
-    rx_statistics["num_rx_samps"] = num_rx_samps
-    rx_statistics["num_rx_dropped"] = num_rx_dropped
-    rx_statistics["num_rx_overruns"] = num_rx_overruns
-    rx_statistics["num_rx_seqerr"] = num_rx_seqerr
-    rx_statistics["num_rx_timeouts"] = num_rx_timeouts
-    rx_statistics["num_rx_late"] = num_rx_late
     # After we get the signal to stop, issue a stop command
     rx_streamer.issue_stream_cmd(uhd.types.StreamCMD(uhd.types.StreamMode.stop_cont))
 
@@ -161,38 +166,44 @@ class Example(QWidget):
         
         pg.setConfigOptions(antialias=False) # True seems to work as well
 
+        # Create pushbutton that resets the views
+        self.button = QPushButton('Reset All Zooms', self)
+        self.button.clicked.connect(self.handleButton)
+        grid.addWidget(self.button, 0, 0)
+        
+        
         # create time plot
-        self.time_plot = pg.PlotWidget(lockAspect=True, enableMouse=False, enableMenu=False, name="Time")
-        self.time_plot.setYRange(-0.1, 0.1)
+        self.time_plot = pg.PlotWidget(labels={'left': 'Amplitude', 'bottom': 'Time [microseconds]'}, enableMenu=False)
+        self.time_plot.getPlotItem().getViewBox().setMouseMode(pg.ViewBox.RectMode)
+        self.time_plot.setMouseEnabled(x=False, y=True)
         self.time_plot_curve_i = self.time_plot.plot([]) 
         self.time_plot_curve_q = self.time_plot.plot([]) 
-        grid.addWidget(self.time_plot, 0, 0)
-        
-        # create fft plot
-        self.time_plot = pg.PlotWidget()
-        self.time_plot.setYRange(-20.0, 0.0)
-        self.time_plot_curve_fft = self.time_plot.plot([]) 
         grid.addWidget(self.time_plot, 1, 0)
         
+        # create fft plot
+        self.fft_plot = pg.PlotWidget(labels={'left': 'PSD', 'bottom': 'Frequency [MHz]'}, enableMenu=False)
+        self.fft_plot.getPlotItem().getViewBox().setMouseMode(pg.ViewBox.RectMode)
+        self.fft_plot.setMouseEnabled(x=False, y=True)
+        self.fft_plot_curve_fft = self.fft_plot.plot([]) 
+        grid.addWidget(self.fft_plot, 2, 0)
+        
         # Create waterfall plot
-        self.waterfall = pg.PlotWidget()
+        self.waterfall = pg.PlotWidget(labels={'left': 'Time [s]', 'bottom': 'Frequency [MHz]'}, enableMenu=False)
+        self.waterfall.getPlotItem().getViewBox().translateBy(x=10.0)
         self.imageitem = pg.ImageItem()
         self.waterfall.addItem(self.imageitem)
-        self.waterfall.hideAxis('left')
-        self.waterfall.hideAxis('bottom')
-        #self.im_widget.ui.histogram.hide() # comment to show histogram
-        #self.im_widget.ui.menuBtn.hide()
-        #self.im_widget.ui.roiBtn.hide()
-        #self.imageitem.setPredefinedGradient('thermal') # options are thermal, flame, yellowy, bipolar, spectrum, cyclic, greyclip, grey
-        grid.addWidget(self.waterfall, 2, 0)
-        #self.im_widget.show()
-
-        self.setGeometry(300, 300, 300, 220)
+        self.waterfall.setMouseEnabled(x=False, y=False)
+        grid.addWidget(self.waterfall, 3, 0)
+  
+        self.setGeometry(300, 300, 300, 220) # window placement and size
         self.setWindowTitle('RTL-SDR Demo')
     
         self.show() # not blocking
         
-            
+    def handleButton(self):
+        self.time_plot.autoRange()
+        self.fft_plot.autoRange()
+                    
             
 if __name__ == "__main__":
     # Setup the logger with our custom timestamp formatting

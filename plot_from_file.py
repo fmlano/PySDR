@@ -7,7 +7,7 @@ from PyQt5.QtCore import QSize, pyqtSlot
 import pyqtgraph as pg
 
 # Params
-filename = 'keyfob.iq'
+filename = 'example_signal.iq'
 
 # Read in signal from file
 x = np.fromfile(filename, dtype=np.uint8)
