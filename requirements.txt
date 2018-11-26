@@ -1,6 +1,5 @@
 numpy
-flask
-bokeh
-pyyaml
 pyrtlsdr
 scipy
+pyqt5
+pyqtgraph
