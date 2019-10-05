@@ -19,6 +19,7 @@ Before we start it's best you don't have UHD installed at the system level, so d
 
 We are going to install UHD, PyQT5, pyqtgraph, and all prereqs in an isolate python virtual evironment (not to be confused with a VM), which will let us blow away installs by just removing one directory, and make sure we don't mess up anything else installed on this system.
 
+- `sudo apt-get install python3-pip git libboost-all-dev`
 - `cd ~`
 - `sudo pip3 install virtualenv` (create the python virtual environment)
 - `virtualenv -p python3 python_uhd_install` (makes sure python3 is used)
@@ -33,7 +34,7 @@ We are going to install UHD, PyQT5, pyqtgraph, and all prereqs in an isolate pyt
 - `mkdir build`
 - `cd build`
 - The following cmake command forces use of python3, disabled a bunch of UHD components we dont need (otherwise it takes ages), and installs UHD to lib within our virtualenv directory
-- `cmake -DENABLE_PYTHON3=ON -DENABLE_EXAMPLES=OFF -DENABLE_TESTS=OFF -DENABLE_RFNOC=OFF -DENABLE_C_API=OFF -DENABLE_X300=OFF -DENABLE_B100=OFF -DENABLE_USRP1=OFF -DENABLE_USRP2=OFF -DENABLE_N230=OFF -DENABLE_N300=OFF -DENABLE_E320=OFF -DENABLE_OCTOCLOCK=OFF -DENABLE_MANUAL=OFF -DCMAKE_INSTALL_PREFIX=~/python_uhd_install/ ..`
+- `cmake -DENABLE_PYTHON3=ON -DENABLE_TESTS=OFF -DENABLE_RFNOC=OFF -DENABLE_C_API=OFF -DENABLE_X300=OFF -DENABLE_B100=OFF -DENABLE_USRP1=OFF -DENABLE_USRP2=OFF -DENABLE_N230=OFF -DENABLE_N300=OFF -DENABLE_E320=OFF -DENABLE_OCTOCLOCK=OFF -DENABLE_MANUAL=OFF -DCMAKE_INSTALL_PREFIX=~/python_uhd_install/ ..`
 - The output of the above command should include "LibUHD - Python API", "USB", "Utils", and "B200" in the list of enabled components.  If not, don't move on
 - `make -j8` (build with 8 threads)
 - `make install` (no sudo!)
@@ -48,6 +49,3 @@ We are going to install UHD, PyQT5, pyqtgraph, and all prereqs in an isolate pyt
 - `cd pysdr`
 - `python usrp_qt5_app.py`
 - A window should pop up, and you should see the spectrum of the FM band.  What displays is very similar to `uhd_fft` if you have ever used that.
-
-You may or may not need to:
-`sudo apt-get install libboost-all-dev`
