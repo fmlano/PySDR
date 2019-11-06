@@ -47,5 +47,5 @@ We are going to install UHD, PyQT5, pyqtgraph, and all prereqs in an isolate pyt
 - `cd ~` (you can clone pysdr wherever you want)
 - `git clone https://github.com/pysdr/pysdr.git`
 - `cd pysdr`
-- `python usrp_qt5_app.py`
+- `python usrp_demo.py`
 - A window should pop up, and you should see the spectrum of the FM band.  What displays is very similar to `uhd_fft` if you have ever used that.
