@@ -1,5 +1,0 @@
-numpy
-pyrtlsdr
-scipy
-pyqt5
-pyqtgraph
